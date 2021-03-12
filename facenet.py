@@ -32,20 +32,20 @@ class Camera(BaseCamera):
                 names2yolobox_index = []
                 all_probs=[]
                 all_boxes=[]
+                facenet_input=[]
                 #对每个有人的框检测人脸
                 for index, (box_left, box_top, box_right, box_bottom, conf, label) in enumerate(det):
                     if box_bottom - box_top < min_person_size:
                         continue
-
-                    _, probs, boxes, names, aligned = facenet.face_infer(
-                        yolo_result[int(box_top):int(min(box_bottom, box_top + (box_right - box_left) * 0.5)),
-                        int(box_left):int(box_right)])  # 把人的上面一部分放进去识别人脸
-                    #对有人脸的行人框，把人脸信息加入列表
-                    if boxes is not None:
-                        aligned_test.extend(aligned)
-                        names2yolobox_index.extend([index] * len(boxes))
-                        all_probs.extend(probs)
-                        all_boxes.extend(boxes)
+                    facenet_input.append(yolo_result[int(box_top):int(min(box_bottom, box_top + (box_right - box_left) * 0.5)),int(box_left):int(box_right)])
+                _, probs, boxes, names, aligned = facenet.face_infer(facenet_input)  # 把人的上面一部分放进去识别人脸
+                print(probs)
+                # #对有人脸的行人框，把人脸信息加入列表
+                # if boxes is not None:
+                #     aligned_test.extend(aligned)
+                #     names2yolobox_index.extend([index] * len(boxes))
+                #     all_probs.extend(probs)
+                #     all_boxes.extend(boxes)
                 # 对每张图的所有人脸，检测是谁
                 if len(aligned_test) > 0:
                     aligned_test = torch.stack(aligned_test).to(device)
