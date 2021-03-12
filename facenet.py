@@ -22,7 +22,7 @@ class Camera(BaseCamera):
             fourcc = cv2.VideoWriter_fourcc(*'mp4v')
             vid_writer = cv2.VideoWriter("result.mp4", fourcc, 15, (1280, 720))
 
-        dataset = LoadStreams("0", img_size=640)
+        dataset = LoadStreams("video3.mp4", img_size=640)
         for path, img, im0s, _ in dataset:
             fpstime = time.time()
             yolo_result, det = yolo_model.infer(path, img, im0s)
@@ -37,9 +37,9 @@ class Camera(BaseCamera):
                 for index, (box_left, box_top, box_right, box_bottom, conf, label) in enumerate(det):
                     if box_bottom - box_top < min_person_size:
                         continue
-                    facenet_input.append(yolo_result[int(box_top):int(min(box_bottom, box_top + (box_right - box_left) * 0.5)),int(box_left):int(box_right)])
+                    facenet_input.append(Image.fromarray(cv2.cvtColor(yolo_result[int(box_top):int(min(box_bottom, box_top + (box_right - box_left) * 0.5)),int(box_left):int(box_right)], cv2.COLOR_BGR2RGB)))
                 _, probs, boxes, names, aligned = facenet.face_infer(facenet_input)  # 把人的上面一部分放进去识别人脸
-                print(probs)
+                print(boxes)
                 # #对有人脸的行人框，把人脸信息加入列表
                 # if boxes is not None:
                 #     aligned_test.extend(aligned)
@@ -153,7 +153,7 @@ class Facenet:
         names = []
         # self.names_colors = []
         with torch.no_grad():
-            faces, probs, boxes = self.mtcnn(Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)), return_prob=True)
+            faces, probs, boxes = self.mtcnn(frame, return_prob=True)
             if boxes is not None:
                 for index, face in enumerate(faces):
                     aligned_test.append(face)
