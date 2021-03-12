@@ -3,12 +3,10 @@ from facenet import Camera
 
 app = Flask(__name__)
 
-
 @app.route('/')
 def index():
     """Video streaming home page."""
     return render_template('index.html')
-
 
 def gen(camera):
     """Video streaming generator function."""
