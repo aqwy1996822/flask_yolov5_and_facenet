@@ -22,45 +22,66 @@ class Camera(BaseCamera):
             fourcc = cv2.VideoWriter_fourcc(*'mp4v')
             vid_writer = cv2.VideoWriter("result.mp4", fourcc, 15, (1280, 720))
 
-        dataset = LoadStreams("video3.mp4", img_size=640)
+        dataset = LoadStreams("0", img_size=640)
         for path, img, im0s, _ in dataset:
             fpstime = time.time()
             yolo_result, det = yolo_model.infer(path, img, im0s)
             # print("yolo_fps:", int(1 / (time.time() - fpstime)))
             if det is not None:
-                aligned_test = []
-                names2yolobox_index = []
-                all_probs=[]
-                all_boxes=[]
                 facenet_input=[]
+                aligned_test= []
+                person_img_boxes=[]
+                person_img_bestprobs = []
                 #对每个有人的框检测人脸
                 for index, (box_left, box_top, box_right, box_bottom, conf, label) in enumerate(det):
                     if box_bottom - box_top < min_person_size:
                         continue
-                    facenet_input.append(Image.fromarray(cv2.cvtColor(yolo_result[int(box_top):int(min(box_bottom, box_top + (box_right - box_left) * 0.5)),int(box_left):int(box_right)], cv2.COLOR_BGR2RGB)))
-                _, probs, boxes, names, aligned = facenet.face_infer(facenet_input)  # 把人的上面一部分放进去识别人脸
-                print(boxes)
-                # #对有人脸的行人框，把人脸信息加入列表
-                # if boxes is not None:
-                #     aligned_test.extend(aligned)
-                #     names2yolobox_index.extend([index] * len(boxes))
-                #     all_probs.extend(probs)
-                #     all_boxes.extend(boxes)
+                    face_prebox=yolo_result[int(box_top):int(min(box_bottom, box_top + (box_right - box_left) * 0.7)),int(box_left):int(box_right)]
+                    # print(face_prebox.shape)
+                    face_prebox=cv2.resize(face_prebox,(250,int(250/face_prebox.shape[1]*face_prebox.shape[0])))
+                    if face_prebox.shape[0]>200:
+                        face_prebox=face_prebox[0:200,:]
+                    else:
+                        face_prebox=np.vstack((face_prebox,np.zeros((200-face_prebox.shape[0],250,3), np.uint8)))
+                    # print(face_prebox.shape)
+
+                    # cv2.imshow("face_back",face_prebox)
+                    # cv2.waitKey(1)
+                    facenet_input.append(Image.fromarray(cv2.cvtColor(face_prebox, cv2.COLOR_BGR2RGB)))
+                    person_img_boxes.append([box_left, box_top, box_right, box_bottom])
+                _, probs, boxes, faces = facenet.face_infer(facenet_input)  # 把人的上面一部分放进去识别人脸
+                # print("=========boxes=========\n",boxes)
+                # print("=========probs=========\n",probs)
+                # 对有人脸的行人框，把人脸信息加入列表
+                for index, pre_person_img_prob in enumerate(probs):
+                    if boxes[index] is not None:#这个人框里面有人脸
+                        pre_person_bestface_index=np.argmax(pre_person_img_prob)#找置信度最大的框
+                        aligned_test.append(faces[index][pre_person_bestface_index])
+                        person_img_bestprobs.append(max(pre_person_img_prob))
                 # 对每张图的所有人脸，检测是谁
                 if len(aligned_test) > 0:
                     aligned_test = torch.stack(aligned_test).to(device)
                     embeddings_test = facenet.resnet(aligned_test).detach().cpu()
                     dists = [[(e1 - e2).norm().item() for e2 in facenet.embeddings] for e1 in embeddings_test]
-                    names = [" " if min(dist) > 0.85 else facenet.dataset.idx_to_class[dist.index(min(dist))] for
+                    names = ["?" if min(dist) > 0.85 else facenet.dataset.idx_to_class[dist.index(min(dist))] for
                              dist in dists]
                     # print(" ".join(names))
                     # 画框 写名字
                     for index, name in enumerate(names):
-                        box_left, box_top, box_right, box_bottom, conf, label = det[names2yolobox_index[index]]
-                        if all_probs[index] > 0.8:
-                            face_box=all_boxes[index]
-                            cv2.putText(yolo_result[int(box_top):int(min(box_bottom, box_top + (box_right - box_left) * 0.5)), int(box_left):int(box_right)], name, (face_box[0], face_box[1]), cv2.FONT_HERSHEY_COMPLEX, 1,(0,255,0),2)
-                            cv2.rectangle(yolo_result[int(box_top):int(min(box_bottom, box_top + (box_right - box_left) * 0.5)), int(box_left):int(box_right)], (face_box[0], face_box[1]), (face_box[2], face_box[3]),(0,255,0),2)
+                        person_img_box = person_img_boxes[index]
+                        c1, c2 = (int(person_img_box[0]), int(person_img_box[1])), (
+                        int(person_img_box[2]), int(person_img_box[3]))
+                        tl = 10
+                        color = (255,69,0)
+                        cv2.rectangle(yolo_result, c1, c2, color, thickness=tl, lineType=cv2.LINE_AA)
+                        if person_img_bestprobs[index]>0.7:
+                            if name!='?':
+                                tf = max(tl - 1, 1)  # font thickness
+                                t_size = cv2.getTextSize(name, 0, fontScale=tl / 3, thickness=tf)[0]
+                                c2 = c1[0] + t_size[0], c1[1] - t_size[1] - 3
+                                cv2.rectangle(yolo_result, c1, c2, color, -1, cv2.LINE_AA)  # filled
+                                cv2.putText(yolo_result, name, (c1[0], c1[1] - 2), 0, tl / 3, [225, 255, 255], thickness=tf,
+                                            lineType=cv2.LINE_AA)
             # 写入mp4前缩小
             yolo_result = cv2.resize(yolo_result, (1280, 720))
             if save_video:
@@ -71,7 +92,7 @@ class Camera(BaseCamera):
 
 class Yolo:
     def __init__(self):
-        weights = 'weights/yolov5m.pt'
+        weights = 'weights/yolov5s.pt'
 
         # Load model
         google_utils.attempt_download(weights)
@@ -84,7 +105,6 @@ class Yolo:
             self.model.half()
 
         self.names = self.model.names if hasattr(self.model, 'names') else self.model.modules.names
-        self.colors = [[random.randint(0, 255) for _ in range(3)] for _ in range(len(self.names))]
 
     def infer(self, path, img, im0s):
         img = torch.from_numpy(img).to(device)
@@ -101,25 +121,11 @@ class Yolo:
                                    fast=True, classes=[0], agnostic=False)
         for i, det in enumerate(pred):  # detections per image
             p, s, im0 = path[i], '%g: ' % i, im0s[i].copy()
-            s += '%gx%g ' % img.shape[2:]  # print string
             if det is not None and len(det):
-
                 det[:, :4] = scale_coords(img.shape[2:], det[:, :4], im0.shape).round()
-                for c in det[:, -1].detach().unique():
-                    n = (det[:, -1] == c).sum()  # detections per class
-                    s += '%g %s, ' % (n, self.names[int(c)])  # add to string
-
-                for *xyxy, conf, cls in det:
-                    label = '%s %.2f' % (self.names[int(cls)], conf)
-                    if xyxy[3] - xyxy[1] < min_person_size:
-                        continue
-                    plot_one_box(xyxy, im0, label=label, color=self.colors[int(cls)], line_thickness=2)
-                # names = [self.names[int(cls)] for clc in det[2]]
-
                 return im0, det.cpu().numpy()
             else:
                 return im0, None
-
 
 class Facenet:
     def __init__(self):
@@ -149,36 +155,10 @@ class Facenet:
         self.embeddings = self.resnet(aligned).detach().cpu()
 
     def face_infer(self, frame):
-        aligned_test = []
-        names = []
         # self.names_colors = []
         with torch.no_grad():
             faces, probs, boxes = self.mtcnn(frame, return_prob=True)
-            if boxes is not None:
-                for index, face in enumerate(faces):
-                    aligned_test.append(face)
-                    # if probs[index] > 0.9:
-                    #     font_color = (0, 255, 0)
-                    # elif probs[index] > 0.7:
-                    #     font_color = (0, 140, 255)
-                    # elif probs[index] > 0.5:
-                    #     font_color = (0, 0, 255)
-                    # else:
-                    #     font_color = (0, 0, 255)
-                    # self.names_colors.append(font_color)
-                # aligned_test = torch.stack(self.aligned_test).to(device)
-                # embeddings_test = self.resnet(aligned_test).detach().cpu()
-                #
-                # dists = [[(e1 - e2).norm().item() for e2 in self.embeddings] for e1 in embeddings_test]
-                # names = ["unknowed" if min(dist) > 1 else self.dataset.idx_to_class[dist.index(min(dist))] for dist in dists]
-                # for index, name in enumerate(names):
-                #     if probs[index]>0.8:
-                #         cv2.rectangle(frame, (boxes[index][0], boxes[index][1]), (boxes[index][2], boxes[index][3]),
-                #                       self.names_colors[index], 2)
-                #         cv2.putText(frame, name, (boxes[index][0], boxes[index][1]), cv2.FONT_HERSHEY_COMPLEX, 1,
-                #                     self.names_colors[index], 2)
-        # cv2.imshow("face",frame)
-        return frame, probs, boxes, names, aligned_test
+        return frame, probs, boxes, faces
 
 
 yolo_model = Yolo()
