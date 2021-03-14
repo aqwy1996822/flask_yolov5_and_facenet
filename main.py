@@ -1,6 +1,5 @@
 from flask import Flask, render_template, Response
 from facenet import Camera
-
 app = Flask(__name__)
 
 @app.route('/')
